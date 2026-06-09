@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Image Capture & Zoom PoC - ENG-30331</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    h1 { color: #333; margin-bottom: 8px; }
+    .subtitle { color: #666; margin-bottom: 24px; }
+
+    .container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+
+    .panel {
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+
+    .panel h2 {
+      margin-top: 0;
+      color: #333;
+      font-size: 18px;
+      border-bottom: 1px solid #eee;
+      padding-bottom: 12px;
+    }
+
+    video, canvas, img {
+      width: 100%;
+      max-width: 640px;
+      background: #000;
+      border-radius: 8px;
+    }
+
+    .controls {
+      margin: 16px 0;
+      padding: 16px;
+      background: #f9f9f9;
+      border-radius: 8px;
+    }
+
+    .control-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .control-row:last-child { margin-bottom: 0; }
+
+    .control-row label {
+      min-width: 120px;
+      font-weight: 500;
+      color: #555;
+    }
+
+    input[type="range"] {
+      flex: 1;
+      height: 8px;
+    }
+
+    .value-display {
+      min-width: 60px;
+      text-align: right;
+      font-family: monospace;
+      color: #333;
+    }
+
+    button {
+      padding: 12px 24px;
+      font-size: 16px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn-primary {
+      background: #1976d2;
+      color: white;
+    }
+    .btn-primary:hover:not(:disabled) { background: #1565c0; }
+
+    .btn-secondary {
+      background: #e0e0e0;
+      color: #333;
+    }
+    .btn-secondary:hover:not(:disabled) { background: #d0d0d0; }
+
+    .btn-success {
+      background: #2e7d32;
+      color: white;
+    }
+    .btn-success:hover:not(:disabled) { background: #1b5e20; }
+
+    .button-row {
+      display: flex;
+      gap: 12px;
+      margin: 16px 0;
+    }
+
+    .capabilities {
+      font-family: monospace;
+      font-size: 12px;
+      background: #1e1e1e;
+      color: #d4d4d4;
+      padding: 16px;
+      border-radius: 8px;
+      max-height: 300px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .result-info {
+      margin-top: 12px;
+      padding: 12px;
+      background: #e8f5e9;
+      border-radius: 8px;
+      font-size: 14px;
+    }
+
+    .result-info.warning {
+      background: #fff3e0;
+    }
+
+    .comparison {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-top: 16px;
+    }
+
+    .comparison-item {
+      text-align: center;
+    }
+
+    .comparison-item img, .comparison-item canvas {
+      width: 100%;
+      height: auto;
+    }
+
+    .comparison-item .label {
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: #333;
+    }
+
+    .comparison-item .stats {
+      font-size: 12px;
+      color: #666;
+      margin-top: 8px;
+    }
+
+    .status {
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 14px;
+      margin-bottom: 16px;
+    }
+
+    .status.success { background: #e8f5e9; color: #2e7d32; }
+    .status.error { background: #ffebee; color: #c62828; }
+    .status.info { background: #e3f2fd; color: #1565c0; }
+
+    .hidden { display: none; }
+
+    .zoom-not-supported {
+      padding: 16px;
+      background: #fff3e0;
+      border-radius: 8px;
+      color: #e65100;
+    }
+
+    .full-width {
+      grid-column: 1 / -1;
+    }
+
+    #digitalZoomPreview {
+      border: 2px dashed #1976d2;
+      background: #f5f5f5;
+    }
+  </style>
+</head>
+<body>
+  <h1>Image Capture & Zoom Proof of Concept</h1>
+  <p class="subtitle">ENG-30331 - Testing ImageCapture API and zoom capabilities for item inspection photography</p>
+
+  <div class="instructions" style="background: #e3f2fd; padding: 16px; border-radius: 8px; margin-bottom: 16px; border-left: 4px solid #1976d2;">
+    <strong>Instructions for warehouse testing:</strong>
+    <ol style="margin: 8px 0 0 0; padding-left: 20px;">
+      <li>Click "Start Camera" and allow camera access when prompted</li>
+      <li>Click "Copy JSON to Clipboard" to copy the camera capabilities</li>
+      <li>Paste the JSON into Slack and send to Andrew</li>
+      <li>(Optional) Click "Capture Both Methods" to compare image quality</li>
+    </ol>
+  </div>
+
+  <div id="status" class="status info">Click "Start Camera" to begin</div>
+
+  <div class="container">
+    <!-- Camera Preview Panel -->
+    <div class="panel">
+      <h2>Live Camera Preview</h2>
+      <video id="video" autoplay playsinline muted></video>
+
+      <div class="button-row">
+        <button id="startBtn" class="btn-primary" onclick="startCamera()">Start Camera</button>
+        <button id="stopBtn" class="btn-secondary" onclick="stopCamera()" disabled>Stop Camera</button>
+      </div>
+
+      <!-- Zoom Controls -->
+      <div id="zoomControls" class="controls hidden">
+        <h3 style="margin-top: 0; font-size: 14px; color: #333;">Hardware Zoom Control</h3>
+        <div class="control-row">
+          <label for="zoomSlider">Zoom Level:</label>
+          <input type="range" id="zoomSlider" min="1" max="5" step="0.1" value="1" oninput="applyZoom(this.value)">
+          <span id="zoomValue" class="value-display">1.0x</span>
+        </div>
+      </div>
+
+      <div id="zoomNotSupported" class="zoom-not-supported hidden">
+        Hardware zoom not supported by this camera/browser. Digital crop-zoom will be used as fallback.
+      </div>
+
+      <!-- Digital Crop Zoom (Fallback) -->
+      <div id="digitalZoomControls" class="controls">
+        <h3 style="margin-top: 0; font-size: 14px; color: #333;">Digital Crop-Zoom (Simulated)</h3>
+        <div class="control-row">
+          <label for="cropZoomSlider">Crop Factor:</label>
+          <input type="range" id="cropZoomSlider" min="1" max="4" step="0.1" value="1" oninput="updateCropPreview(this.value)">
+          <span id="cropZoomValue" class="value-display">1.0x</span>
+        </div>
+        <p style="font-size: 12px; color: #666; margin: 8px 0 0;">
+          This crops the center of the full-resolution capture to simulate zoom.
+        </p>
+      </div>
+    </div>
+
+    <!-- Capabilities Panel -->
+    <div class="panel">
+      <h2>Camera Capabilities</h2>
+      <div class="button-row">
+        <button id="copyJsonBtn" class="btn-primary" onclick="copyCapabilitiesJson()" disabled>Copy JSON to Clipboard</button>
+      </div>
+      <div id="copyFeedback" class="status success hidden" style="margin-bottom: 12px;">Copied to clipboard!</div>
+      <pre id="capabilities" class="capabilities">Camera not started yet...</pre>
+    </div>
+
+    <!-- Capture Panel -->
+    <div class="panel full-width">
+      <h2>Capture Comparison: takePhoto() vs Frame Grab</h2>
+      <p style="color: #666; font-size: 14px;">
+        Click "Capture Both" to compare ImageCapture.takePhoto() (full sensor resolution) vs canvas frame grab (video resolution).
+      </p>
+
+      <div class="button-row">
+        <button id="captureBtn" class="btn-success" onclick="captureBoth()" disabled>Capture Both Methods</button>
+        <button id="clearBtn" class="btn-secondary" onclick="clearCaptures()">Clear</button>
+      </div>
+
+      <div class="comparison">
+        <div class="comparison-item">
+          <div class="label">ImageCapture.takePhoto()</div>
+          <img id="takePhotoResult" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="takePhoto result">
+          <div id="takePhotoStats" class="stats">Waiting for capture...</div>
+        </div>
+        <div class="comparison-item">
+          <div class="label">Canvas Frame Grab (Current Method)</div>
+          <canvas id="grabFrameResult"></canvas>
+          <div id="grabFrameStats" class="stats">Waiting for capture...</div>
+        </div>
+      </div>
+
+      <!-- Digital Crop Result -->
+      <div id="cropResultSection" class="hidden" style="margin-top: 24px;">
+        <h3>Digital Crop-Zoom Result</h3>
+        <div class="comparison-item" style="max-width: 50%;">
+          <canvas id="cropZoomResult"></canvas>
+          <div id="cropZoomStats" class="stats"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let stream = null;
+    let track = null;
+    let imageCapture = null;
+    let zoomCapabilities = null;
+    let lastTakePhotoBlob = null;
+
+    const video = document.getElementById('video');
+    const capabilitiesEl = document.getElementById('capabilities');
+    const statusEl = document.getElementById('status');
+
+    function setStatus(message, type = 'info') {
+      statusEl.textContent = message;
+      statusEl.className = `status ${type}`;
+    }
+
+    async function startCamera() {
+      try {
+        setStatus('Requesting camera access...', 'info');
+
+        // Request high resolution to maximize what we can capture
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            width: { ideal: 4096 },
+            height: { ideal: 2160 },
+            facingMode: 'environment'
+          },
+          audio: false
+        });
+
+        video.srcObject = stream;
+        track = stream.getVideoTracks()[0];
+        imageCapture = new ImageCapture(track);
+
+        // Get and display capabilities
+        const capabilities = track.getCapabilities();
+        const settings = track.getSettings();
+
+        capabilitiesEl.textContent = JSON.stringify({
+          capabilities,
+          currentSettings: settings,
+          photoCapabilities: await imageCapture.getPhotoCapabilities().catch(e => ({ error: e.message })),
+          supportedConstraints: navigator.mediaDevices.getSupportedConstraints()
+        }, null, 2);
+
+        // Check for zoom support
+        if (capabilities.zoom) {
+          zoomCapabilities = capabilities.zoom;
+          document.getElementById('zoomControls').classList.remove('hidden');
+          document.getElementById('zoomNotSupported').classList.add('hidden');
+
+          const slider = document.getElementById('zoomSlider');
+          slider.min = zoomCapabilities.min;
+          slider.max = zoomCapabilities.max;
+          slider.step = zoomCapabilities.step || 0.1;
+          slider.value = settings.zoom || zoomCapabilities.min;
+          document.getElementById('zoomValue').textContent = `${parseFloat(slider.value).toFixed(1)}x`;
+        } else {
+          document.getElementById('zoomControls').classList.add('hidden');
+          document.getElementById('zoomNotSupported').classList.remove('hidden');
+        }
+
+        // Update button states
+        document.getElementById('startBtn').disabled = true;
+        document.getElementById('stopBtn').disabled = false;
+        document.getElementById('captureBtn').disabled = false;
+        document.getElementById('copyJsonBtn').disabled = false;
+
+        setStatus(`Camera started: ${track.label} (${settings.width}x${settings.height})`, 'success');
+
+      } catch (error) {
+        console.error('Error starting camera:', error);
+        setStatus(`Error: ${error.message}`, 'error');
+      }
+    }
+
+    function stopCamera() {
+      if (stream) {
+        stream.getTracks().forEach(t => t.stop());
+        stream = null;
+        track = null;
+        imageCapture = null;
+      }
+
+      video.srcObject = null;
+      document.getElementById('startBtn').disabled = false;
+      document.getElementById('stopBtn').disabled = true;
+      document.getElementById('captureBtn').disabled = true;
+      document.getElementById('zoomControls').classList.add('hidden');
+
+      setStatus('Camera stopped', 'info');
+    }
+
+    async function applyZoom(value) {
+      if (!track || !zoomCapabilities) return;
+
+      try {
+        await track.applyConstraints({
+          advanced: [{ zoom: parseFloat(value) }]
+        });
+        document.getElementById('zoomValue').textContent = `${parseFloat(value).toFixed(1)}x`;
+      } catch (error) {
+        console.error('Error applying zoom:', error);
+        setStatus(`Zoom error: ${error.message}`, 'error');
+      }
+    }
+
+    function updateCropPreview(value) {
+      document.getElementById('cropZoomValue').textContent = `${parseFloat(value).toFixed(1)}x`;
+    }
+
+    async function captureBoth() {
+      if (!imageCapture || !track) return;
+
+      setStatus('Capturing...', 'info');
+
+      const startTime = performance.now();
+
+      try {
+        // Method 1: ImageCapture.takePhoto() - Full resolution
+        const takePhotoStart = performance.now();
+        const blob = await imageCapture.takePhoto();
+        const takePhotoTime = performance.now() - takePhotoStart;
+        lastTakePhotoBlob = blob;
+
+        // Display takePhoto result
+        const takePhotoImg = document.getElementById('takePhotoResult');
+        const takePhotoUrl = URL.createObjectURL(blob);
+
+        // Get dimensions by loading image
+        const img = new Image();
+        img.onload = () => {
+          document.getElementById('takePhotoStats').innerHTML = `
+            <strong>Resolution: ${img.width} x ${img.height}</strong><br>
+            Megapixels: ${((img.width * img.height) / 1000000).toFixed(2)} MP<br>
+            File size: ${(blob.size / 1024).toFixed(1)} KB<br>
+            Capture time: ${takePhotoTime.toFixed(0)} ms
+          `;
+          URL.revokeObjectURL(takePhotoUrl);
+
+          // Now apply digital crop if requested
+          applyCropZoom(img);
+        };
+        img.src = takePhotoUrl;
+        takePhotoImg.src = takePhotoUrl;
+
+        // Method 2: Canvas frame grab (current method)
+        const grabStart = performance.now();
+        const canvas = document.getElementById('grabFrameResult');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0);
+        const grabTime = performance.now() - grabStart;
+
+        // Get frame grab as blob for size comparison
+        canvas.toBlob((grabBlob) => {
+          document.getElementById('grabFrameStats').innerHTML = `
+            <strong>Resolution: ${canvas.width} x ${canvas.height}</strong><br>
+            Megapixels: ${((canvas.width * canvas.height) / 1000000).toFixed(2)} MP<br>
+            File size: ${(grabBlob.size / 1024).toFixed(1)} KB<br>
+            Capture time: ${grabTime.toFixed(0)} ms
+          `;
+        }, 'image/jpeg', 0.85);
+
+        const totalTime = performance.now() - startTime;
+        setStatus(`Capture complete in ${totalTime.toFixed(0)}ms`, 'success');
+
+      } catch (error) {
+        console.error('Capture error:', error);
+        setStatus(`Capture error: ${error.message}`, 'error');
+      }
+    }
+
+    function applyCropZoom(sourceImg) {
+      const cropFactor = parseFloat(document.getElementById('cropZoomSlider').value);
+
+      if (cropFactor <= 1) {
+        document.getElementById('cropResultSection').classList.add('hidden');
+        return;
+      }
+
+      document.getElementById('cropResultSection').classList.remove('hidden');
+
+      const canvas = document.getElementById('cropZoomResult');
+      const ctx = canvas.getContext('2d');
+
+      // Calculate crop dimensions
+      const cropWidth = sourceImg.width / cropFactor;
+      const cropHeight = sourceImg.height / cropFactor;
+      const cropX = (sourceImg.width - cropWidth) / 2;
+      const cropY = (sourceImg.height - cropHeight) / 2;
+
+      // Output at a reasonable display size (but preserve the cropped resolution)
+      canvas.width = cropWidth;
+      canvas.height = cropHeight;
+
+      ctx.drawImage(
+        sourceImg,
+        cropX, cropY, cropWidth, cropHeight,  // Source rectangle
+        0, 0, cropWidth, cropHeight            // Destination rectangle
+      );
+
+      canvas.toBlob((blob) => {
+        document.getElementById('cropZoomStats').innerHTML = `
+          <strong>Cropped Resolution: ${Math.round(cropWidth)} x ${Math.round(cropHeight)}</strong><br>
+          Megapixels: ${((cropWidth * cropHeight) / 1000000).toFixed(2)} MP<br>
+          Effective zoom: ${cropFactor.toFixed(1)}x<br>
+          File size: ${(blob.size / 1024).toFixed(1)} KB
+        `;
+      }, 'image/jpeg', 0.85);
+    }
+
+    function clearCaptures() {
+      document.getElementById('takePhotoResult').src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+      document.getElementById('takePhotoStats').textContent = 'Waiting for capture...';
+
+      const canvas = document.getElementById('grabFrameResult');
+      canvas.width = 1;
+      canvas.height = 1;
+      document.getElementById('grabFrameStats').textContent = 'Waiting for capture...';
+
+      document.getElementById('cropResultSection').classList.add('hidden');
+      lastTakePhotoBlob = null;
+    }
+
+    // Update crop preview when slider changes (if we have a captured image)
+    document.getElementById('cropZoomSlider').addEventListener('input', () => {
+      if (lastTakePhotoBlob) {
+        const img = new Image();
+        img.onload = () => applyCropZoom(img);
+        img.src = URL.createObjectURL(lastTakePhotoBlob);
+      }
+    });
+
+    async function copyCapabilitiesJson() {
+      const json = capabilitiesEl.textContent;
+      try {
+        await navigator.clipboard.writeText(json);
+        const feedback = document.getElementById('copyFeedback');
+        feedback.classList.remove('hidden');
+        setTimeout(() => feedback.classList.add('hidden'), 2000);
+      } catch (err) {
+        // Fallback for older browsers
+        const textarea = document.createElement('textarea');
+        textarea.value = json;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        const feedback = document.getElementById('copyFeedback');
+        feedback.classList.remove('hidden');
+        setTimeout(() => feedback.classList.add('hidden'), 2000);
+      }
+    }
+  </script>
+</body>
+</html>
