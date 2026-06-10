@@ -307,6 +307,9 @@
     let zoomCapabilities = null;
     let lastTakePhotoBlob = null;
 
+    // Progressive JSON data object
+    let jsonData = {};
+
     const video = document.getElementById('video');
     const capabilitiesEl = document.getElementById('capabilities');
     const statusEl = document.getElementById('status');
@@ -314,6 +317,10 @@
     function setStatus(message, type = 'info') {
       statusEl.textContent = message;
       statusEl.className = `status ${type}`;
+    }
+
+    function updateJsonDisplay() {
+      capabilitiesEl.textContent = JSON.stringify(jsonData, null, 2);
     }
 
     async function startCamera() {
@@ -338,12 +345,16 @@
         const capabilities = track.getCapabilities();
         const settings = track.getSettings();
 
-        capabilitiesEl.textContent = JSON.stringify({
-          capabilities,
-          currentSettings: settings,
-          photoCapabilities: await imageCapture.getPhotoCapabilities().catch(e => ({ error: e.message })),
-          supportedConstraints: navigator.mediaDevices.getSupportedConstraints()
-        }, null, 2);
+        // Reset jsonData and populate cameraInfo
+        jsonData = {
+          cameraInfo: {
+            capabilities,
+            currentSettings: settings,
+            photoCapabilities: await imageCapture.getPhotoCapabilities().catch(e => ({ error: e.message })),
+            supportedConstraints: navigator.mediaDevices.getSupportedConstraints()
+          }
+        };
+        updateJsonDisplay();
 
         // Check for zoom support
         if (capabilities.zoom) {
@@ -429,24 +440,7 @@
         const takePhotoImg = document.getElementById('takePhotoResult');
         const takePhotoUrl = URL.createObjectURL(blob);
 
-        // Get dimensions by loading image
-        const img = new Image();
-        img.onload = () => {
-          document.getElementById('takePhotoStats').innerHTML = `
-            <strong>Resolution: ${img.width} x ${img.height}</strong><br>
-            Megapixels: ${((img.width * img.height) / 1000000).toFixed(2)} MP<br>
-            File size: ${(blob.size / 1024).toFixed(1)} KB<br>
-            Capture time: ${takePhotoTime.toFixed(0)} ms
-          `;
-          URL.revokeObjectURL(takePhotoUrl);
-
-          // Now apply digital crop if requested
-          applyCropZoom(img);
-        };
-        img.src = takePhotoUrl;
-        takePhotoImg.src = takePhotoUrl;
-
-        // Method 2: Canvas frame grab (current method)
+        // Method 2: Canvas frame grab (current method) — start in parallel
         const grabStart = performance.now();
         const canvas = document.getElementById('grabFrameResult');
         canvas.width = video.videoWidth;
@@ -457,13 +451,49 @@
 
         // Get frame grab as blob for size comparison
         canvas.toBlob((grabBlob) => {
+          const grabStats = {
+            resolution: `${canvas.width} x ${canvas.height}`,
+            megapixels: ((canvas.width * canvas.height) / 1000000).toFixed(2) + ' MP',
+            fileSizeKB: (grabBlob.size / 1024).toFixed(1) + ' KB',
+            captureTimeMs: grabTime.toFixed(0) + ' ms'
+          };
           document.getElementById('grabFrameStats').innerHTML = `
-            <strong>Resolution: ${canvas.width} x ${canvas.height}</strong><br>
-            Megapixels: ${((canvas.width * canvas.height) / 1000000).toFixed(2)} MP<br>
-            File size: ${(grabBlob.size / 1024).toFixed(1)} KB<br>
-            Capture time: ${grabTime.toFixed(0)} ms
+            <strong>Resolution: ${grabStats.resolution}</strong><br>
+            Megapixels: ${grabStats.megapixels}<br>
+            File size: ${grabStats.fileSizeKB}<br>
+            Capture time: ${grabStats.captureTimeMs}
           `;
+          jsonData.frameGrabCapture = grabStats;
+          updateJsonDisplay();
         }, 'image/jpeg', 0.85);
+
+        // Get dimensions by loading takePhoto image
+        const img = new Image();
+        img.onload = () => {
+          const takePhotoStats = {
+            resolution: `${img.width} x ${img.height}`,
+            megapixels: ((img.width * img.height) / 1000000).toFixed(2) + ' MP',
+            fileSizeKB: (blob.size / 1024).toFixed(1) + ' KB',
+            captureTimeMs: takePhotoTime.toFixed(0) + ' ms'
+          };
+          document.getElementById('takePhotoStats').innerHTML = `
+            <strong>Resolution: ${takePhotoStats.resolution}</strong><br>
+            Megapixels: ${takePhotoStats.megapixels}<br>
+            File size: ${takePhotoStats.fileSizeKB}<br>
+            Capture time: ${takePhotoStats.captureTimeMs}
+          `;
+          jsonData.takePhotoCapture = takePhotoStats;
+          // Remove stale crop data from previous capture
+          delete jsonData.digitalCropZoom;
+          updateJsonDisplay();
+
+          URL.revokeObjectURL(takePhotoUrl);
+
+          // Now apply digital crop if requested
+          applyCropZoom(img);
+        };
+        img.src = takePhotoUrl;
+        takePhotoImg.src = takePhotoUrl;
 
         const totalTime = performance.now() - startTime;
         setStatus(`Capture complete in ${totalTime.toFixed(0)}ms`, 'success');
@@ -479,6 +509,8 @@
 
       if (cropFactor <= 1) {
         document.getElementById('cropResultSection').classList.add('hidden');
+        delete jsonData.digitalCropZoom;
+        updateJsonDisplay();
         return;
       }
 
@@ -504,12 +536,20 @@
       );
 
       canvas.toBlob((blob) => {
+        const cropStats = {
+          cropResolution: `${Math.round(cropWidth)} x ${Math.round(cropHeight)}`,
+          megapixels: ((cropWidth * cropHeight) / 1000000).toFixed(2) + ' MP',
+          effectiveZoom: cropFactor.toFixed(1) + 'x',
+          fileSizeKB: (blob.size / 1024).toFixed(1) + ' KB'
+        };
         document.getElementById('cropZoomStats').innerHTML = `
-          <strong>Cropped Resolution: ${Math.round(cropWidth)} x ${Math.round(cropHeight)}</strong><br>
-          Megapixels: ${((cropWidth * cropHeight) / 1000000).toFixed(2)} MP<br>
-          Effective zoom: ${cropFactor.toFixed(1)}x<br>
-          File size: ${(blob.size / 1024).toFixed(1)} KB
+          <strong>Cropped Resolution: ${cropStats.cropResolution}</strong><br>
+          Megapixels: ${cropStats.megapixels}<br>
+          Effective zoom: ${cropStats.effectiveZoom}<br>
+          File size: ${cropStats.fileSizeKB}
         `;
+        jsonData.digitalCropZoom = cropStats;
+        updateJsonDisplay();
       }, 'image/jpeg', 0.85);
     }
 
@@ -524,6 +564,12 @@
 
       document.getElementById('cropResultSection').classList.add('hidden');
       lastTakePhotoBlob = null;
+
+      // Remove capture and crop data from JSON, keep cameraInfo
+      delete jsonData.takePhotoCapture;
+      delete jsonData.frameGrabCapture;
+      delete jsonData.digitalCropZoom;
+      updateJsonDisplay();
     }
 
     // Update crop preview when slider changes (if we have a captured image)
