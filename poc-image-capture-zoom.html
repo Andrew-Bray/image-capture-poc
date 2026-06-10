@@ -20,6 +20,13 @@
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 24px;
+      align-items: start;
+    }
+
+    .left-column {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
     }
 
     .panel {
@@ -35,6 +42,34 @@
       font-size: 18px;
       border-bottom: 1px solid #eee;
       padding-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .step-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: #e0e0e0;
+      color: #888;
+      font-size: 14px;
+      font-weight: 700;
+      flex-shrink: 0;
+      transition: all 0.3s;
+    }
+
+    .step-badge.active {
+      background: #1976d2;
+      color: white;
+    }
+
+    .step-badge.complete {
+      background: #2e7d32;
+      color: white;
     }
 
     video, canvas, img {
@@ -42,6 +77,11 @@
       max-width: 640px;
       background: #000;
       border-radius: 8px;
+    }
+
+    #video {
+      max-height: 260px;
+      object-fit: cover;
     }
 
     .controls {
@@ -110,10 +150,30 @@
     }
     .btn-success:hover:not(:disabled) { background: #1b5e20; }
 
+    .btn-copy {
+      background: #e0e0e0;
+      color: #666;
+      transition: all 0.4s;
+    }
+    .btn-copy:hover:not(:disabled) { background: #d0d0d0; }
+    .btn-copy.enriched {
+      background: #1976d2;
+      color: white;
+      animation: pulse-once 0.6s ease;
+    }
+    .btn-copy.enriched:hover:not(:disabled) { background: #1565c0; }
+
+    @keyframes pulse-once {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+      100% { transform: scale(1); }
+    }
+
     .button-row {
       display: flex;
       gap: 12px;
-      margin: 16px 0;
+      margin: 12px 0;
+      align-items: center;
     }
 
     .capabilities {
@@ -197,50 +257,148 @@
       border: 2px dashed #1976d2;
       background: #f5f5f5;
     }
+
+    .json-section-toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .json-section-toggle .chevron {
+      transition: transform 0.2s;
+      font-size: 12px;
+      color: #888;
+    }
+
+    .json-section-toggle .chevron.open {
+      transform: rotate(90deg);
+    }
+
+    .data-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      padding: 4px 10px;
+      border-radius: 12px;
+      background: #f5f5f5;
+      color: #888;
+      transition: all 0.3s;
+    }
+
+    .data-badge.partial {
+      background: #fff3e0;
+      color: #e65100;
+    }
+
+    .data-badge.complete {
+      background: #e8f5e9;
+      color: #2e7d32;
+    }
+
+    .data-badge .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .nudge-text {
+      font-size: 13px;
+      color: #888;
+      font-style: italic;
+      margin: 0;
+      transition: opacity 0.3s;
+    }
   </style>
 </head>
 <body>
   <h1>Image Capture & Zoom Proof of Concept</h1>
   <p class="subtitle">ENG-30331 - Testing ImageCapture API and zoom capabilities for item inspection photography</p>
 
-  <div class="instructions" style="background: #e3f2fd; padding: 16px; border-radius: 8px; margin-bottom: 16px; border-left: 4px solid #1976d2;">
-    <strong>Instructions for warehouse testing:</strong>
-    <ol style="margin: 8px 0 0 0; padding-left: 20px;">
-      <li>Click "Start Camera" and allow camera access when prompted</li>
-      <li>Click "Copy JSON to Clipboard" to copy the camera capabilities</li>
-      <li>Paste the JSON into Slack and send to Andrew</li>
-      <li>(Optional) Click "Capture Both Methods" to compare image quality</li>
-    </ol>
+  <!-- Browser compatibility gate -->
+  <div id="browserWarning" class="hidden" style="background: #ffebee; border: 2px solid #c62828; border-radius: 12px; padding: 24px; margin-bottom: 24px; text-align: center;">
+    <h2 style="color: #c62828; margin-top: 0;">Browser Not Supported</h2>
+    <p style="font-size: 16px; color: #333; margin: 12px 0;">
+      This tool requires <strong>Google Chrome</strong> (desktop, version 87+) for camera capture and zoom features.
+    </p>
+    <p id="browserDetail" style="font-size: 14px; color: #666;"></p>
+    <p style="font-size: 14px; color: #333; margin-top: 16px;">
+      Please open this page in <strong>Chrome on a desktop computer</strong> and try again.
+    </p>
   </div>
 
   <div id="status" class="status info">Click "Start Camera" to begin</div>
 
-  <div class="container">
-    <!-- Camera Preview Panel -->
-    <div class="panel">
-      <h2>Live Camera Preview</h2>
-      <video id="video" autoplay playsinline muted></video>
+  <div id="appContent" class="container">
+    <!-- Left column: Steps 1 + 3 stacked -->
+    <div class="left-column">
+      <!-- Step 1: Camera Preview Panel -->
+      <div class="panel">
+        <h2><span id="step1Badge" class="step-badge active">1</span> Start Camera</h2>
+        <video id="video" autoplay playsinline muted></video>
 
-      <div class="button-row">
-        <button id="startBtn" class="btn-primary" onclick="startCamera()">Start Camera</button>
-        <button id="stopBtn" class="btn-secondary" onclick="stopCamera()" disabled>Stop Camera</button>
-      </div>
+        <div class="button-row">
+          <button id="startBtn" class="btn-primary" onclick="startCamera()">Start Camera</button>
+          <button id="stopBtn" class="btn-secondary" onclick="stopCamera()" disabled>Stop Camera</button>
+        </div>
 
-      <!-- Zoom Controls -->
-      <div id="zoomControls" class="controls hidden">
-        <h3 style="margin-top: 0; font-size: 14px; color: #333;">Hardware Zoom Control</h3>
-        <div class="control-row">
-          <label for="zoomSlider">Zoom Level:</label>
-          <input type="range" id="zoomSlider" min="1" max="5" step="0.1" value="1" oninput="applyZoom(this.value)">
-          <span id="zoomValue" class="value-display">1.0x</span>
+        <!-- Zoom Controls -->
+        <div id="zoomControls" class="controls hidden">
+          <h3 style="margin-top: 0; font-size: 14px; color: #333;">Hardware Zoom Control</h3>
+          <div class="control-row">
+            <label for="zoomSlider">Zoom Level:</label>
+            <input type="range" id="zoomSlider" min="1" max="5" step="0.1" value="1" oninput="applyZoom(this.value)">
+            <span id="zoomValue" class="value-display">1.0x</span>
+          </div>
+        </div>
+
+        <div id="zoomNotSupported" class="zoom-not-supported hidden">
+          Hardware zoom not supported by this camera/browser. Digital crop-zoom will be used as fallback.
         </div>
       </div>
 
-      <div id="zoomNotSupported" class="zoom-not-supported hidden">
-        Hardware zoom not supported by this camera/browser. Digital crop-zoom will be used as fallback.
+      <!-- Step 3: JSON Results Panel -->
+      <div class="panel">
+        <h2>
+          <span id="step3Badge" class="step-badge">3</span>
+          <span class="json-section-toggle" onclick="toggleJsonPanel()">
+            Results JSON
+            <span id="jsonChevron" class="chevron open">&#9654;</span>
+          </span>
+          <span id="dataBadge" class="data-badge">
+            <span class="dot"></span>
+            <span id="dataBadgeText">No data yet</span>
+          </span>
+        </h2>
+
+        <div id="jsonContent">
+          <div class="button-row">
+            <button id="copyJsonBtn" class="btn-copy" onclick="copyCapabilitiesJson()" disabled>Copy JSON to Clipboard</button>
+            <div id="copyFeedback" class="status success hidden" style="margin-bottom: 0;">Copied!</div>
+          </div>
+          <p id="nudgeText" class="nudge-text">Start the camera, capture a photo, and try zoom to build a complete report.</p>
+          <pre id="capabilities" class="capabilities">Camera not started yet...</pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 2: Capture & Zoom Panel (right column) -->
+    <div class="panel">
+      <h2><span id="step2Badge" class="step-badge">2</span> Capture & Zoom</h2>
+      <p style="color: #666; font-size: 14px; margin-top: 0;">
+        Capture a photo, then try the digital crop-zoom to see how resolution holds up.
+      </p>
+
+      <div class="button-row">
+        <button id="captureBtn" class="btn-success" onclick="captureBoth()" disabled>Capture Both Methods</button>
+        <button id="clearBtn" class="btn-secondary" onclick="clearCaptures()">Clear</button>
       </div>
 
-      <!-- Digital Crop Zoom (Fallback) -->
+      <!-- Digital Crop Zoom -->
       <div id="digitalZoomControls" class="controls">
         <h3 style="margin-top: 0; font-size: 14px; color: #333;">Digital Crop-Zoom (Simulated)</h3>
         <div class="control-row">
@@ -249,41 +407,18 @@
           <span id="cropZoomValue" class="value-display">1.0x</span>
         </div>
         <p style="font-size: 12px; color: #666; margin: 8px 0 0;">
-          This crops the center of the full-resolution capture to simulate zoom.
+          This crops the center of the full-resolution capture to simulate zoom. Try 2x or 3x after capturing.
         </p>
-      </div>
-    </div>
-
-    <!-- Capabilities Panel -->
-    <div class="panel">
-      <h2>Camera Capabilities</h2>
-      <div class="button-row">
-        <button id="copyJsonBtn" class="btn-primary" onclick="copyCapabilitiesJson()" disabled>Copy JSON to Clipboard</button>
-      </div>
-      <div id="copyFeedback" class="status success hidden" style="margin-bottom: 12px;">Copied to clipboard!</div>
-      <pre id="capabilities" class="capabilities">Camera not started yet...</pre>
-    </div>
-
-    <!-- Capture Panel -->
-    <div class="panel full-width">
-      <h2>Capture Comparison: takePhoto() vs Frame Grab</h2>
-      <p style="color: #666; font-size: 14px;">
-        Click "Capture Both" to compare ImageCapture.takePhoto() (full sensor resolution) vs canvas frame grab (video resolution).
-      </p>
-
-      <div class="button-row">
-        <button id="captureBtn" class="btn-success" onclick="captureBoth()" disabled>Capture Both Methods</button>
-        <button id="clearBtn" class="btn-secondary" onclick="clearCaptures()">Clear</button>
       </div>
 
       <div class="comparison">
         <div class="comparison-item">
-          <div class="label">ImageCapture.takePhoto()</div>
+          <div class="label">takePhoto()</div>
           <img id="takePhotoResult" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="takePhoto result">
           <div id="takePhotoStats" class="stats">Waiting for capture...</div>
         </div>
         <div class="comparison-item">
-          <div class="label">Canvas Frame Grab (Current Method)</div>
+          <div class="label">Canvas Frame Grab</div>
           <canvas id="grabFrameResult"></canvas>
           <div id="grabFrameStats" class="stats">Waiting for capture...</div>
         </div>
@@ -298,6 +433,7 @@
         </div>
       </div>
     </div>
+
   </div>
 
   <script>
@@ -305,6 +441,7 @@
     let track = null;
     let imageCapture = null;
     let zoomCapabilities = null;
+    let hasHardwareZoom = false;
     let lastTakePhotoBlob = null;
 
     // Progressive JSON data object
@@ -321,6 +458,97 @@
 
     function updateJsonDisplay() {
       capabilitiesEl.textContent = JSON.stringify(jsonData, null, 2);
+      updateDataBadge();
+    }
+
+    function updateDataBadge() {
+      const badge = document.getElementById('dataBadge');
+      const badgeText = document.getElementById('dataBadgeText');
+      const copyBtn = document.getElementById('copyJsonBtn');
+      const nudge = document.getElementById('nudgeText');
+
+      const sections = [];
+      if (jsonData.cameraInfo) sections.push('camera');
+      if (jsonData.takePhotoCapture) sections.push('capture');
+      if (jsonData.frameGrabCapture) sections.push('frame grab');
+      if (!hasHardwareZoom && jsonData.digitalCropZoom) sections.push('crop zoom');
+
+      const count = sections.length;
+      // With hardware zoom: 3 sections (camera, takePhoto, frameGrab). Without: 4 (+ digitalCropZoom).
+      const totalSections = hasHardwareZoom ? 3 : 4;
+
+      if (count === 0) {
+        badge.className = 'data-badge';
+        badgeText.textContent = 'No data yet';
+        nudge.textContent = 'Start the camera, capture a photo to build a complete report.';
+        nudge.style.opacity = '1';
+        copyBtn.className = 'btn-copy';
+      } else if (count < totalSections) {
+        badge.className = 'data-badge partial';
+        badgeText.textContent = `${count} of ${totalSections} sections`;
+        if (!hasHardwareZoom && !jsonData.digitalCropZoom && jsonData.takePhotoCapture) {
+          nudge.textContent = 'Try adjusting the crop-zoom slider to add zoom data to the report.';
+        } else if (!jsonData.takePhotoCapture) {
+          nudge.textContent = hasHardwareZoom
+            ? 'Try the hardware zoom, then capture a photo.'
+            : 'Capture a photo and try crop-zoom to include more data in the report.';
+        } else {
+          nudge.textContent = '';
+        }
+        nudge.style.opacity = count >= totalSections - 1 ? '0.6' : '1';
+        copyBtn.className = 'btn-copy';
+      } else {
+        badge.className = 'data-badge complete';
+        badgeText.textContent = `All ${totalSections} sections`;
+        nudge.style.opacity = '0';
+        // Promote the copy button
+        copyBtn.className = 'btn-copy enriched';
+      }
+    }
+
+    function updateStepBadges() {
+      const step1 = document.getElementById('step1Badge');
+      const step2 = document.getElementById('step2Badge');
+      const step3 = document.getElementById('step3Badge');
+
+      const hasCameraInfo = !!jsonData.cameraInfo;
+      const hasCaptureData = !!(jsonData.takePhotoCapture || jsonData.frameGrabCapture);
+      const hasCropData = !!jsonData.digitalCropZoom;
+
+      // Step 1
+      if (hasCameraInfo) {
+        step1.className = 'step-badge complete';
+      } else {
+        step1.className = 'step-badge active';
+      }
+
+      // Step 2
+      if (hasCaptureData) {
+        step2.className = 'step-badge complete';
+      } else if (hasCameraInfo) {
+        step2.className = 'step-badge active';
+      } else {
+        step2.className = 'step-badge';
+      }
+
+      // Step 3
+      if (hasCaptureData) {
+        step3.className = 'step-badge active';
+      } else {
+        step3.className = 'step-badge';
+      }
+    }
+
+    function toggleJsonPanel() {
+      const content = document.getElementById('jsonContent');
+      const chevron = document.getElementById('jsonChevron');
+      if (content.classList.contains('hidden')) {
+        content.classList.remove('hidden');
+        chevron.classList.add('open');
+      } else {
+        content.classList.add('hidden');
+        chevron.classList.remove('open');
+      }
     }
 
     async function startCamera() {
@@ -332,7 +560,8 @@
           video: {
             width: { ideal: 4096 },
             height: { ideal: 2160 },
-            facingMode: 'environment'
+            facingMode: 'environment',
+            zoom: true  // Signal PTZ intent so Chrome exposes zoom capabilities
           },
           audio: false
         });
@@ -340,6 +569,9 @@
         video.srcObject = stream;
         track = stream.getVideoTracks()[0];
         imageCapture = new ImageCapture(track);
+
+        // Brief delay to let the device fully enumerate capabilities
+        await new Promise(resolve => setTimeout(resolve, 500));
 
         // Get and display capabilities
         const capabilities = track.getCapabilities();
@@ -355,22 +587,37 @@
           }
         };
         updateJsonDisplay();
+        updateStepBadges();
 
-        // Check for zoom support
-        if (capabilities.zoom) {
+        // Check for zoom support — guard against non-object or incomplete zoom capability
+        const hasZoomRange = capabilities.zoom
+          && typeof capabilities.zoom === 'object'
+          && capabilities.zoom.min != null
+          && capabilities.zoom.max != null;
+
+        if (hasZoomRange) {
+          hasHardwareZoom = true;
           zoomCapabilities = capabilities.zoom;
           document.getElementById('zoomControls').classList.remove('hidden');
           document.getElementById('zoomNotSupported').classList.add('hidden');
+          // Hide digital crop — hardware zoom is the real thing
+          document.getElementById('digitalZoomControls').classList.add('hidden');
 
           const slider = document.getElementById('zoomSlider');
           slider.min = zoomCapabilities.min;
           slider.max = zoomCapabilities.max;
-          slider.step = zoomCapabilities.step || 0.1;
-          slider.value = settings.zoom || zoomCapabilities.min;
-          document.getElementById('zoomValue').textContent = `${parseFloat(slider.value).toFixed(1)}x`;
+          slider.step = zoomCapabilities.step || 1;
+          // Reset to 1x in case zoom persisted from a previous session
+          const initialZoom = zoomCapabilities.min;
+          slider.value = initialZoom;
+          await track.applyConstraints({ advanced: [{ zoom: initialZoom }] }).catch(() => {});
+          document.getElementById('zoomValue').textContent = formatZoom(initialZoom);
         } else {
+          hasHardwareZoom = false;
           document.getElementById('zoomControls').classList.add('hidden');
           document.getElementById('zoomNotSupported').classList.remove('hidden');
+          // Show digital crop as fallback
+          document.getElementById('digitalZoomControls').classList.remove('hidden');
         }
 
         // Update button states
@@ -404,14 +651,23 @@
       setStatus('Camera stopped', 'info');
     }
 
+    // Normalize zoom values for display. Cameras report zoom in different scales:
+    // BRIO-style: 100-500 (100 = 1x), or spec-style: 1.0-5.0 (1.0 = 1x)
+    function formatZoom(rawValue) {
+      if (!zoomCapabilities) return `${parseFloat(rawValue).toFixed(1)}x`;
+      const min = zoomCapabilities.min;
+      // If min >= 10, it's a percentage-based scale (e.g., 100 = 1x)
+      const displayValue = min >= 10 ? rawValue / min : rawValue;
+      return `${displayValue.toFixed(1)}x`;
+    }
+
     async function applyZoom(value) {
       if (!track || !zoomCapabilities) return;
 
+      const zoomVal = parseFloat(value);
       try {
-        await track.applyConstraints({
-          advanced: [{ zoom: parseFloat(value) }]
-        });
-        document.getElementById('zoomValue').textContent = `${parseFloat(value).toFixed(1)}x`;
+        await track.applyConstraints({ advanced: [{ zoom: zoomVal }] });
+        document.getElementById('zoomValue').textContent = formatZoom(zoomVal);
       } catch (error) {
         console.error('Error applying zoom:', error);
         setStatus(`Zoom error: ${error.message}`, 'error');
@@ -465,6 +721,7 @@
           `;
           jsonData.frameGrabCapture = grabStats;
           updateJsonDisplay();
+          updateStepBadges();
         }, 'image/jpeg', 0.85);
 
         // Get dimensions by loading takePhoto image
@@ -476,21 +733,30 @@
             fileSizeKB: (blob.size / 1024).toFixed(1) + ' KB',
             captureTimeMs: takePhotoTime.toFixed(0) + ' ms'
           };
+          // If hardware zoom is active, record the current zoom level
+          if (hasHardwareZoom) {
+            const currentZoom = track.getSettings().zoom ?? zoomCapabilities.min;
+            takePhotoStats.hardwareZoom = formatZoom(currentZoom);
+          }
           document.getElementById('takePhotoStats').innerHTML = `
             <strong>Resolution: ${takePhotoStats.resolution}</strong><br>
             Megapixels: ${takePhotoStats.megapixels}<br>
             File size: ${takePhotoStats.fileSizeKB}<br>
             Capture time: ${takePhotoStats.captureTimeMs}
+            ${takePhotoStats.hardwareZoom ? '<br>Hardware zoom: ' + takePhotoStats.hardwareZoom : ''}
           `;
           jsonData.takePhotoCapture = takePhotoStats;
           // Remove stale crop data from previous capture
           delete jsonData.digitalCropZoom;
           updateJsonDisplay();
+          updateStepBadges();
 
           URL.revokeObjectURL(takePhotoUrl);
 
-          // Now apply digital crop if requested
-          applyCropZoom(img);
+          // Only apply digital crop if hardware zoom is not available
+          if (!hasHardwareZoom) {
+            applyCropZoom(img);
+          }
         };
         img.src = takePhotoUrl;
         takePhotoImg.src = takePhotoUrl;
@@ -511,6 +777,7 @@
         document.getElementById('cropResultSection').classList.add('hidden');
         delete jsonData.digitalCropZoom;
         updateJsonDisplay();
+        updateStepBadges();
         return;
       }
 
@@ -550,6 +817,7 @@
         `;
         jsonData.digitalCropZoom = cropStats;
         updateJsonDisplay();
+        updateStepBadges();
       }, 'image/jpeg', 0.85);
     }
 
@@ -570,15 +838,21 @@
       delete jsonData.frameGrabCapture;
       delete jsonData.digitalCropZoom;
       updateJsonDisplay();
+      updateStepBadges();
     }
 
-    // Update crop preview when slider changes (if we have a captured image)
+    // Debounced crop preview — label updates instantly, expensive canvas+blob work waits 200ms
+    let cropDebounceTimer = null;
     document.getElementById('cropZoomSlider').addEventListener('input', () => {
-      if (lastTakePhotoBlob) {
-        const img = new Image();
-        img.onload = () => applyCropZoom(img);
-        img.src = URL.createObjectURL(lastTakePhotoBlob);
-      }
+      if (hasHardwareZoom) return;
+      clearTimeout(cropDebounceTimer);
+      cropDebounceTimer = setTimeout(() => {
+        if (lastTakePhotoBlob) {
+          const img = new Image();
+          img.onload = () => applyCropZoom(img);
+          img.src = URL.createObjectURL(lastTakePhotoBlob);
+        }
+      }, 200);
     });
 
     async function copyCapabilitiesJson() {
