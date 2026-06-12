@@ -555,14 +555,17 @@
       try {
         setStatus('Requesting camera access...', 'info');
 
+        // Define constraints for getUserMedia — stored so we can include in JSON
+        const requestedConstraints = {
+          width: { ideal: 4096 },
+          height: { ideal: 2160 },
+          facingMode: 'environment',
+          zoom: true  // Signal PTZ intent so Chrome exposes zoom capabilities
+        };
+
         // Request high resolution to maximize what we can capture
         stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            width: { ideal: 4096 },
-            height: { ideal: 2160 },
-            facingMode: 'environment',
-            zoom: true  // Signal PTZ intent so Chrome exposes zoom capabilities
-          },
+          video: requestedConstraints,
           audio: false
         });
 
@@ -577,27 +580,52 @@
         const capabilities = track.getCapabilities();
         const settings = track.getSettings();
 
+        // Get photo capabilities
+        const photoCapabilities = await imageCapture.getPhotoCapabilities().catch(e => ({ error: e.message }));
+
+        // Get all available video input devices
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const availableDevices = devices
+          .filter(d => d.kind === 'videoinput')
+          .map(d => ({
+            label: d.label || 'Unknown Device',
+            deviceId: d.deviceId
+          }));
+
+        // Detect zoom capability for inclusion in cameraInfo
+        const zoomCap = capabilities.zoom;
+        const hasZoomRange = zoomCap
+          && typeof zoomCap === 'object'
+          && zoomCap.min != null
+          && zoomCap.max != null;
+        const zoomCapability = hasZoomRange
+          ? { min: zoomCap.min, max: zoomCap.max, step: zoomCap.step || 1 }
+          : null;
+
         // Reset jsonData and populate cameraInfo
         jsonData = {
           cameraInfo: {
+            label: settings.label || 'Unknown Camera',
+            browser: navigator.userAgent,
+            imageCapturAvailable: typeof ImageCapture !== 'undefined',
+            zoomCapability,
+            jpegQuality: 0.85,
+            requestedConstraints,
+            negotiatedResolution: `${settings.width} x ${settings.height}`,
+            availableDevices,
             capabilities,
             currentSettings: settings,
-            photoCapabilities: await imageCapture.getPhotoCapabilities().catch(e => ({ error: e.message })),
+            photoCapabilities,
             supportedConstraints: navigator.mediaDevices.getSupportedConstraints()
           }
         };
         updateJsonDisplay();
         updateStepBadges();
 
-        // Check for zoom support — guard against non-object or incomplete zoom capability
-        const hasZoomRange = capabilities.zoom
-          && typeof capabilities.zoom === 'object'
-          && capabilities.zoom.min != null
-          && capabilities.zoom.max != null;
-
-        if (hasZoomRange) {
+        // Check for zoom support — use the already-computed zoomCapability
+        if (zoomCapability) {
           hasHardwareZoom = true;
-          zoomCapabilities = capabilities.zoom;
+          zoomCapabilities = zoomCapability;
           document.getElementById('zoomControls').classList.remove('hidden');
           document.getElementById('zoomNotSupported').classList.add('hidden');
           // Hide digital crop — hardware zoom is the real thing
